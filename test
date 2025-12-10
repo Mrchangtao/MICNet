@@ -1,0 +1,82 @@
+
+import torch
+import torch.nn.functional as F
+import sys
+sys.path.append('./models')
+import numpy as np
+import os, argparse
+import cv2
+from models.MICNet import MICNet
+# from cpts4.Swin_Transformer import SwinNet
+from tools.data import test_dataset
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--testsize', type=int, default=384, help='testing size')
+parser.add_argument('--gpu_id', type=str, default='5', help='select gpu id')
+parser.add_argument('--test_path',type=str,default='./Data/test_set/',help='test dataset path')
+opt = parser.parse_args()
+
+dataset_path = opt.test_path
+
+#set device for test
+if opt.gpu_id == '1':
+    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+    print('USE GPU 1')
+elif opt.gpu_id == '2':
+    os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+    print('USE GPU 2')
+elif opt.gpu_id == '3':
+    os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+    print('USE GPU 3')
+elif opt.gpu_id == '4':
+    os.environ["CUDA_VISIBLE_DEVICES"] = "4"
+    print('USE GPU 4')
+elif opt.gpu_id == '5':
+    os.environ["CUDA_VISIBLE_DEVICES"] = "5"
+    print('USE GPU 5')
+elif opt.gpu_id == '6':
+    os.environ["CUDA_VISIBLE_DEVICES"] = "6"
+    print('USE GPU 6')
+elif opt.gpu_id == '7':
+    os.environ["CUDA_VISIBLE_DEVICES"] = "7"
+    print('USE GPU 7')
+
+#load the model
+model = MICNet()
+model.load_state_dict(torch.load('./checkpoints/ckpt/MICNet_epoch_best.pth'))
+model.cuda()
+model.eval()
+# test
+
+test_datasets = ['DUT-RGBD', 'NJU2K', 'NLPR', 'SIP', 'STERE'] #  ['DUT-RGBD','LFSD','NJU2K','NLPR','RGBD135','SIP','STERE']
+# test_datasets = ['STEREO']
+# test_datasets = ['VT821','VT5000','VT1000']
+# test_datasets = ['nju2k','stere','sip']
+for dataset in test_datasets:
+    save_path = './final/train_2985/' + dataset + '/'
+    edge_save_path = './final/train_2985/edge/' + dataset + '/'
+    if not os.path.exists(save_path):
+        os.makedirs(save_path)
+        os.makedirs(edge_save_path)
+    image_root = dataset_path + dataset + '/RGB/'
+    gt_root = dataset_path + dataset + '/GT/'
+    depth_root = dataset_path + dataset + '/depth/'
+    test_loader = test_dataset(image_root, gt_root, depth_root, opt.testsize)
+    for i in range(test_loader.size):
+        image, gt, depth, name, image_for_post = test_loader.load_data()
+        gt = np.asarray(gt, np.float32)
+        gt /= (gt.max() + 1e-8)
+        image = image.cuda()
+        depth = depth = depth.repeat(1,3,1,1).cuda()
+        res, edge_rgb, edge, res1 = model(image, depth)
+        res = F.upsample(res, size=gt.shape, mode='bilinear', align_corners=False)
+        edge = F.upsample(edge, size=gt.shape, mode='bilinear', align_corners=False)
+        res = res.sigmoid().data.cpu().numpy().squeeze()
+        edge = edge.sigmoid().data.cpu().numpy().squeeze()
+        res = (res - res.min()) / (res.max() - res.min() + 1e-8)
+        edge = (edge - edge.min()) / (edge.max() - edge.min() + 1e-8)
+        print('save img to: ',save_path+name)
+        # ndarray to image
+        cv2.imwrite(save_path + name, res*255)
+        cv2.imwrite(edge_save_path + name, edge * 255)
+    print('Test Done!')
